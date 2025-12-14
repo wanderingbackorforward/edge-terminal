@@ -1,14 +1,13 @@
 /**
- * Shield Tunneling ICP Terminal (T193)
- * Main Application Entry Point with React Router
+ * Shield Tunneling ICP - Edge Terminal
+ * 边缘端实时监控前端
  */
 import React from 'react';
 import { ConfigProvider, theme } from 'antd';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import zhCN from 'antd/locale/zh_CN';
 import { Layout } from './components/layout';
-import { Dashboard, Warnings, RingDetail, WorkOrders, Settings } from './pages';
-import Analytics from './pages/Analytics';
+import { Dashboard, Warnings, RingDetail, Settings, Analytics } from './pages';
 
 // Dark theme configuration
 const darkThemeConfig = {
@@ -47,11 +46,10 @@ const App: React.FC = () => {
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="warnings" element={<Warnings />} />
-            <Route path="workorders" element={<WorkOrders />} />
             <Route path="rings" element={<RingDetail />} />
             <Route path="rings/:ringNumber" element={<RingDetail />} />
-            <Route path="settings" element={<Settings />} />
             <Route path="analytics/*" element={<Analytics />} />
+            <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

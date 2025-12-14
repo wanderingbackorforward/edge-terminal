@@ -1,6 +1,6 @@
 /**
- * Navigation Component (T195)
- * Main navigation menu for the application
+ * Navigation Component - Edge Terminal
+ * 边缘端导航菜单
  */
 import React from 'react';
 import { Menu, Badge } from 'antd';
@@ -8,7 +8,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined,
   AlertOutlined,
-  FileTextOutlined,
   AimOutlined,
   SettingOutlined,
   LineChartOutlined,
@@ -18,7 +17,6 @@ import type { MenuProps } from 'antd';
 interface NavigationProps {
   collapsed?: boolean;
   activeWarningCount?: number;
-  pendingWorkOrderCount?: number;
 }
 
 type MenuItem = Required<MenuProps>['items'][number];
@@ -40,7 +38,6 @@ function getItem(
 export const Navigation: React.FC<NavigationProps> = ({
   collapsed = false,
   activeWarningCount = 0,
-  pendingWorkOrderCount = 0,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,20 +57,6 @@ export const Navigation: React.FC<NavigationProps> = ({
       </span>,
       '/warnings',
       <AlertOutlined />
-    ),
-    getItem(
-      <span>
-        工单
-        {pendingWorkOrderCount > 0 && (
-          <Badge
-            count={pendingWorkOrderCount}
-            size="small"
-            style={{ marginLeft: 8 }}
-          />
-        )}
-      </span>,
-      '/workorders',
-      <FileTextOutlined />
     ),
     getItem('环信息', '/rings', <AimOutlined />),
     getItem('数据分析', '/analytics', <LineChartOutlined />, [
@@ -100,7 +83,6 @@ export const Navigation: React.FC<NavigationProps> = ({
     // Check for parent path match (for nested routes)
     if (path.startsWith('/analytics')) return ['/analytics'];
     if (path.startsWith('/rings')) return ['/rings'];
-    if (path.startsWith('/workorders')) return ['/workorders'];
     if (path.startsWith('/warnings')) return ['/warnings'];
 
     return ['/'];

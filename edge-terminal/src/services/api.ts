@@ -1,6 +1,6 @@
 /**
- * T167: REST API Client Service
- * Handles HTTP communication with Edge and Cloud APIs
+ * Edge Terminal - REST API Client Service
+ * 边缘端 API 客户端，仅连接 Edge API
  */
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import type {
@@ -13,30 +13,16 @@ import type {
   WarningQueryParams,
   AcknowledgeWarningRequest,
   ResolveWarningRequest,
-  WorkOrder,
-  WorkOrderListResponse,
-  WorkOrderQueryParams,
-  CreateWorkOrderRequest,
-  AssignWorkOrderRequest,
   ApiError,
 } from '../types/api';
 
-// API Configuration
+// Edge API Configuration
 const EDGE_API_URL = import.meta.env.VITE_EDGE_API_URL || 'http://localhost:8000';
-const CLOUD_API_URL = import.meta.env.VITE_CLOUD_API_URL || 'http://localhost:8001';
 
-// Create axios instances
+// Create axios instance for Edge API
 const edgeApi: AxiosInstance = axios.create({
   baseURL: `${EDGE_API_URL}/api/v1`,
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-const cloudApi: AxiosInstance = axios.create({
-  baseURL: `${CLOUD_API_URL}/api/v1`,
-  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -265,68 +251,6 @@ export const warningApi = {
 };
 
 // ============================================================================
-// Work Order API (Cloud)
-// ============================================================================
-
-export const workOrderApi = {
-  /**
-   * Get paginated work orders
-   */
-  async getWorkOrders(params?: WorkOrderQueryParams): Promise<WorkOrderListResponse> {
-    try {
-      const response = await cloudApi.get<WorkOrderListResponse>('/work-orders', {
-        params: { project_id: 1, ...params },
-      });
-      return response.data;
-    } catch (error) {
-      throw handleApiError(error as AxiosError);
-    }
-  },
-
-  /**
-   * Get single work order
-   */
-  async getWorkOrder(workOrderId: string): Promise<WorkOrder> {
-    try {
-      const response = await cloudApi.get<WorkOrder>(`/work-orders/${workOrderId}`);
-      return response.data;
-    } catch (error) {
-      throw handleApiError(error as AxiosError);
-    }
-  },
-
-  /**
-   * Create work order
-   */
-  async createWorkOrder(request: CreateWorkOrderRequest): Promise<WorkOrder> {
-    try {
-      const response = await cloudApi.post<WorkOrder>('/work-orders', request);
-      return response.data;
-    } catch (error) {
-      throw handleApiError(error as AxiosError);
-    }
-  },
-
-  /**
-   * Assign work order
-   */
-  async assignWorkOrder(
-    workOrderId: string,
-    request: AssignWorkOrderRequest
-  ): Promise<WorkOrder> {
-    try {
-      const response = await cloudApi.post<WorkOrder>(
-        `/work-orders/${workOrderId}/assign`,
-        request
-      );
-      return response.data;
-    } catch (error) {
-      throw handleApiError(error as AxiosError);
-    }
-  },
-};
-
-// ============================================================================
 // Health Check
 // ============================================================================
 
@@ -342,18 +266,6 @@ export const healthApi = {
       throw handleApiError(error as AxiosError);
     }
   },
-
-  /**
-   * Check cloud API health
-   */
-  async checkCloudHealth(): Promise<{ status: string; timestamp: number }> {
-    try {
-      const response = await axios.get(`${CLOUD_API_URL}/health`);
-      return response.data;
-    } catch (error) {
-      throw handleApiError(error as AxiosError);
-    }
-  },
 };
 
 // Export default API object
@@ -361,6 +273,5 @@ export default {
   ring: ringApi,
   prediction: predictionApi,
   warning: warningApi,
-  workOrder: workOrderApi,
   health: healthApi,
 };
