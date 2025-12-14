@@ -1,0 +1,47 @@
+# T050: Alignment Configuration
+# Ring-based spatio-temporal alignment parameters
+
+ring_geometry:
+  diameter: 6.2  # meters (shield machine diameter)
+  width: 1.5     # meters (ring segment width)
+
+ring_boundary_detection:
+  method: "auto"  # auto | manual
+  auto_signal: "advance_sensor"  # PLC tag indicating ring completion
+  fallback_duration: 45  # minutes (average ring excavation time for time-based fallback)
+  advance_threshold: 1.4  # meters (cumulative advance distance to mark ring complete)
+
+time_lag_windows:
+  # Time windows for associating monitoring data with rings (post-excavation)
+  surface_settlement:
+    min_hours: 6
+    max_hours: 8
+
+  deep_displacement:
+    min_hours: 12
+    max_hours: 24
+
+  groundwater_level:
+    min_hours: 0
+    max_hours: 4
+
+feature_engineering:
+  aggregation_functions:
+    - mean
+    - max
+    - min
+    - std
+
+  derived_indicators:
+    - specific_energy
+    - ground_loss_rate
+    - volume_loss_ratio
+
+  # Historical window for time-windowed features (for ML)
+  historical_window_size: 10  # rings
+
+# Data completeness thresholds
+data_completeness:
+  min_plc_readings: 100  # Minimum PLC readings for 'complete' status
+  min_attitude_readings: 50
+  required_settlement: true  # Settlement is required for complete status

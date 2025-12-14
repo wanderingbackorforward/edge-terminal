@@ -1,0 +1,40 @@
+# Physics-based Validation Rules
+# Used by ReasonablenessChecker for cross-parameter validation
+
+rules:
+  thrust_penetration_ratio:
+    description: "Thrust should increase proportionally with penetration rate"
+    min_ratio: 100      # kN per mm/min (minimum acceptable)
+    max_ratio: 2000     # kN per mm/min (maximum acceptable)
+    enabled: true
+
+  torque_thrust_ratio:
+    description: "Torque/Thrust ratio check for cutterhead operation"
+    min_ratio: 0.01     # kNm/kN (minimum)
+    max_ratio: 0.15     # kNm/kN (maximum)
+    enabled: true
+
+  chamber_pressure_depth:
+    description: "Chamber pressure should match excavation depth (earth pressure balance)"
+    min_bar_per_meter: 0.08   # Minimum 0.08 bar/m
+    max_bar_per_meter: 0.15   # Maximum 0.15 bar/m (1.5x earth pressure)
+    enabled: true
+
+  power_consumption:
+    description: "Power should correlate with thrust, torque, and penetration rate"
+    enabled: true
+
+  grout_pressure_volume:
+    description: "Grout volume should correspond to injection pressure"
+    min_volume_per_ring: 3.0    # m³ (minimum theoretical void)
+    max_volume_per_ring: 8.0    # m³ (maximum with overbreak)
+    min_pressure: 1.0           # bar
+    max_pressure: 5.0           # bar
+    enabled: true
+
+# Engineering constants for calculations
+constants:
+  tunnel_diameter: 6.2        # meters
+  ring_width: 1.5             # meters
+  typical_cutterhead_rpm: 2.0 # revolutions per minute
+  soil_unit_weight: 18.5      # kN/m³ (typical)

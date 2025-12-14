@@ -1,0 +1,191 @@
+# Warning System Configuration
+# Implements Feature 003 - Real-Time Warning System
+# Configure notification channels, recipients, and retry policies
+
+# ==============================================================================
+# MQTT Configuration (Real-time dashboard notifications)
+# ==============================================================================
+mqtt:
+  broker_host: localhost
+  broker_port: 1883
+  client_id: edge-warning-publisher
+  username: null  # Set if broker requires authentication
+  password: null
+  qos: 1  # Quality of Service (0=at most once, 1=at least once, 2=exactly once)
+  retain: true  # Retain messages for new subscribers
+  topics:
+    all: shield/warnings/all
+    attention: shield/warnings/attention
+    warning: shield/warnings/warning
+    alarm: shield/warnings/alarm
+    status_updates: shield/warnings/status_updates
+    system_status: shield/warnings/system/status
+
+# ==============================================================================
+# Email Configuration (WARNING and ALARM level notifications)
+# ==============================================================================
+email:
+  enabled: true
+  smtp_host: smtp.gmail.com  # Gmail SMTP
+  smtp_port: 587  # 587 for TLS, 465 for SSL, 25 for plain
+  smtp_user: shield-alerts@example.com
+  smtp_password: your-app-password-here  # Use app password for Gmail
+  from_address: shield-alerts@example.com
+  from_name: Shield Tunneling Alert System
+  use_tls: true  # Use STARTTLS encryption
+  use_ssl: false  # Use SSL encryption (port 465)
+  timeout: 30  # Connection timeout in seconds
+
+  # Recipient lists by warning level
+  recipients:
+    WARNING:
+      - engineer1@example.com
+      - engineer2@example.com
+      - supervisor@example.com
+    ALARM:
+      - engineer1@example.com
+      - engineer2@example.com
+      - supervisor@example.com
+      - manager@example.com
+      - safety-officer@example.com
+    all:
+      # Fallback recipients if level-specific list not found
+      - engineer1@example.com
+
+# ==============================================================================
+# SMS Configuration (ALARM level only)
+# ==============================================================================
+sms:
+  enabled: true
+  provider: twilio  # Options: twilio, http, gsm
+
+  # Twilio configuration (recommended for cloud-connected deployments)
+  twilio:
+    account_sid: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    auth_token: your-auth-token-here
+    from_number: +1234567890  # Your Twilio phone number
+
+  # HTTP API gateway configuration (alternative)
+  http:
+    api_url: https://api.sms-gateway.com/send
+    api_key: your-api-key-here
+    from_number: +1234567890
+
+  # GSM modem configuration (for offline/remote sites)
+  gsm:
+    serial_port: /dev/ttyUSB0
+    baud_rate: 115200
+
+  # Recipient phone numbers (E.164 format: +country_code + number)
+  recipients:
+    ALARM:
+      - +1234567890  # Supervisor mobile
+      - +0987654321  # Manager mobile
+      - +1122334455  # Safety officer mobile
+    all:
+      - +1234567890  # Fallback recipient
+
+# ==============================================================================
+# Graded Response Configuration
+# ==============================================================================
+# Defines which notification channels are used for each warning level
+graded_response:
+  ATTENTION:
+    channels:
+      - mqtt  # Dashboard highlighting only
+    description: Minor deviation, informational only
+
+  WARNING:
+    channels:
+      - mqtt
+      - email
+    description: Significant deviation, requires attention
+
+  ALARM:
+    channels:
+      - mqtt
+      - email
+      - sms
+    description: Critical threshold violation, immediate action required
+
+# ==============================================================================
+# Retry Policy Configuration
+# ==============================================================================
+retry:
+  enabled: true
+  max_attempts: 3  # Maximum retry attempts per notification
+  max_task_age_hours: 24  # Expire retry tasks after this duration
+  cleanup_interval_seconds: 3600  # Cleanup check interval (1 hour)
+  backoff_delays:
+    - 60    # 1st retry: 60 seconds
+    - 300   # 2nd retry: 5 minutes
+    - 900   # 3rd retry: 15 minutes
+
+# ==============================================================================
+# Notification Batching Configuration
+# ==============================================================================
+batching:
+  enabled: true
+  max_batch_size: 10  # Maximum warnings per batch email
+  batch_interval_seconds: 300  # Send batch every 5 minutes
+  batch_only_for_levels:
+    - ATTENTION  # Only batch ATTENTION warnings
+    # WARNING and ALARM always sent individually
+
+# ==============================================================================
+# Warning Level Thresholds (moved to database after migration 010)
+# ==============================================================================
+# These are now stored in warning_thresholds table
+# Use this for reference and initial seeding only
+#
+# Example threshold configuration (for documentation):
+# thresholds:
+#   settlement_value:
+#     geological_zone: all
+#     attention_upper: 20.0  # mm
+#     warning_upper: 30.0    # mm
+#     alarm_upper: 40.0      # mm
+#     rate_attention_multiplier: 2.0  # 2× historical average
+#     rate_warning_multiplier: 3.0    # 3× historical average
+#     rate_alarm_multiplier: 5.0      # 5× historical average
+#     predictive_enabled: true
+#     predictive_threshold_percentage: 0.9  # Warn at 90% of threshold
+#     predictive_horizon_hours: 24
+#     hysteresis_percentage: 0.05  # 5% buffer to prevent oscillation
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: logs/warnings.log
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# ==============================================================================
+# Example Provider Configurations
+# ==============================================================================
+# Gmail SMTP:
+#   smtp_host: smtp.gmail.com
+#   smtp_port: 587
+#   use_tls: true
+#   Note: Use app password, enable "Less secure app access"
+#
+# Office 365 SMTP:
+#   smtp_host: smtp.office365.com
+#   smtp_port: 587
+#   use_tls: true
+#
+# AWS SES SMTP:
+#   smtp_host: email-smtp.us-east-1.amazonaws.com
+#   smtp_port: 587
+#   use_tls: true
+#   Note: Use SMTP credentials from AWS SES console
+#
+# SendGrid SMTP:
+#   smtp_host: smtp.sendgrid.net
+#   smtp_port: 587
+#   smtp_user: apikey
+#   smtp_password: your-sendgrid-api-key
+#   use_tls: true

@@ -1,0 +1,222 @@
+# Data Source Configuration
+# Defines all data sources for the edge platform
+
+sources:
+  # PLC System via OPC UA
+  plc_main:
+    type: opcua
+    enabled: true
+    endpoint_url: "opc.tcp://192.168.1.10:4840"
+    namespace_index: 2
+    subscription_interval: 1000  # ms
+    tags:
+      # Thrust System
+      - name: thrust_total
+        node_id: "thrust_total"
+        unit: kN
+        sampling_rate: 1.0  # Hz
+      - name: thrust_cylinder_1
+        node_id: "thrust_cyl_1"
+        unit: kN
+      - name: thrust_cylinder_2
+        node_id: "thrust_cyl_2"
+        unit: kN
+      - name: thrust_cylinder_3
+        node_id: "thrust_cyl_3"
+        unit: kN
+      - name: thrust_cylinder_4
+        node_id: "thrust_cyl_4"
+        unit: kN
+
+      # Cutterhead System
+      - name: cutterhead_torque
+        node_id: "cutterhead_torque"
+        unit: kNm
+      - name: cutterhead_speed
+        node_id: "cutterhead_rpm"
+        unit: rpm
+      - name: cutterhead_power
+        node_id: "cutterhead_power"
+        unit: kW
+
+      # Advance System
+      - name: penetration_rate
+        node_id: "penetration_rate"
+        unit: mm/min
+      - name: advance_speed
+        node_id: "advance_speed"
+        unit: mm/min
+
+      # Earth Pressure Balance
+      - name: chamber_pressure
+        node_id: "epb_chamber_pressure"
+        unit: bar
+      - name: screw_conveyor_speed
+        node_id: "screw_conveyor_rpm"
+        unit: rpm
+      - name: screw_conveyor_torque
+        node_id: "screw_conveyor_torque"
+        unit: kNm
+
+      # Slurry System
+      - name: slurry_flow_in
+        node_id: "slurry_flow_in"
+        unit: m3/h
+      - name: slurry_flow_out
+        node_id: "slurry_flow_out"
+        unit: m3/h
+      - name: slurry_pressure
+        node_id: "slurry_pressure"
+        unit: bar
+      - name: slurry_density
+        node_id: "slurry_density"
+        unit: g/cm3
+      - name: slurry_temperature
+        node_id: "slurry_temp"
+        unit: C
+
+      # Grouting System
+      - name: grout_volume
+        node_id: "grout_volume"
+        unit: m3
+      - name: grout_pressure
+        node_id: "grout_pressure"
+        unit: bar
+
+      # Power System
+      - name: power_total
+        node_id: "total_power"
+        unit: kW
+      - name: power_cutterhead
+        node_id: "power_cutterhead"
+        unit: kW
+      - name: power_thrust
+        node_id: "power_thrust"
+        unit: kW
+
+    connection:
+      auto_reconnect: true
+      reconnect_delay: 5  # seconds
+      timeout: 10  # seconds
+      max_retries: 3
+
+  # Guidance System via Modbus TCP
+  guidance_system:
+    type: modbus
+    enabled: true
+    host: "192.168.1.100"
+    port: 502
+    slave_id: 1
+    poll_interval: 1.0  # seconds
+    registers:
+      - name: pitch
+        address: 100
+        count: 2
+        data_type: float32
+        unit: degrees
+      - name: roll
+        address: 102
+        count: 2
+        data_type: float32
+        unit: degrees
+      - name: yaw
+        address: 104
+        count: 2
+        data_type: float32
+        unit: degrees
+      - name: horizontal_deviation
+        address: 106
+        count: 2
+        data_type: float32
+        unit: mm
+      - name: vertical_deviation
+        address: 108
+        count: 2
+        data_type: float32
+        unit: mm
+      - name: axis_deviation
+        address: 110
+        count: 2
+        data_type: float32
+        unit: mm
+      - name: excavation_depth
+        address: 112
+        count: 2
+        data_type: float32
+        unit: m
+      - name: chainage
+        address: 114
+        count: 2
+        data_type: float32
+        unit: m
+
+    connection:
+      auto_reconnect: true
+      reconnect_delay: 5
+      timeout: 3
+      max_retries: 3
+
+  # Settlement Monitoring via REST API
+  monitoring_api:
+    type: rest
+    enabled: true
+    base_url: "http://192.168.1.200:8080/api/v1"
+    endpoints:
+      surface_settlement:
+        path: "/sensors/settlement"
+        method: GET
+        poll_interval: 60  # seconds (1 minute)
+      building_tilt:
+        path: "/sensors/tilt"
+        method: GET
+        poll_interval: 300  # seconds (5 minutes)
+      groundwater:
+        path: "/sensors/groundwater"
+        method: GET
+        poll_interval: 600  # seconds (10 minutes)
+
+    authentication:
+      type: bearer
+      token_env_var: MONITORING_API_TOKEN
+
+    connection:
+      timeout: 10
+      max_retries: 3
+      retry_delay: 2
+
+  # Manual Data Entry
+  manual_entry:
+    type: manual
+    enabled: true
+    allowed_tags:
+      - geological_zone
+      - ring_number
+      - construction_remarks
+      - inspection_notes
+    validation:
+      require_timestamp: true
+      require_operator_id: true
+
+# Buffer Configuration
+buffer:
+  enabled: true
+  max_size: 10000  # Maximum records in buffer
+  flush_interval: 5  # seconds
+  flush_threshold: 1000  # Flush when buffer reaches this size
+  overflow_strategy: drop_oldest  # drop_oldest | drop_newest | block
+
+# Data Quality
+data_quality:
+  enable_threshold_validation: true
+  enable_interpolation: true
+  enable_reasonableness_check: true
+  enable_calibration: true
+  enable_quality_metrics: true
+
+# Logging
+logging:
+  level: INFO
+  file: "logs/data_collection.log"
+  max_size_mb: 100
+  backup_count: 5
+  console_output: true

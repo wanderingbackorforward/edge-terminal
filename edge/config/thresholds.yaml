@@ -1,0 +1,108 @@
+# T042: Engineering Thresholds Configuration
+# Per-tag validation limits for data quality assurance
+
+thresholds:
+  # Shield Machine Thrust
+  thrust_total:
+    min: 0
+    max: 50000  # kN
+    unit: kN
+    description: "Total thrust force"
+
+  # Cutterhead Torque
+  torque_cutterhead:
+    min: 0
+    max: 15000  # kN·m
+    unit: kN·m
+    description: "Cutterhead torque"
+
+  # Chamber Pressure
+  chamber_pressure:
+    min: 0
+    max: 10  # bar
+    unit: bar
+    description: "Earth pressure balance chamber pressure"
+
+  # Advance Rate
+  advance_rate:
+    min: 0
+    max: 120  # mm/min
+    unit: mm/min
+    description: "Shield advance rate"
+
+  # Grout Pressure
+  grout_pressure:
+    min: 0
+    max: 10  # bar
+    unit: bar
+    description: "Tail void grouting pressure"
+
+  # Grout Volume
+  grout_volume:
+    min: 0
+    max: 100  # m³
+    unit: m³
+    description: "Grout volume per ring"
+
+  # Cutterhead RPM
+  cutterhead_rpm:
+    min: 0
+    max: 5  # RPM
+    unit: RPM
+    description: "Cutterhead rotation speed"
+
+  # Attitude (degrees)
+  pitch:
+    min: -5
+    max: 5
+    unit: degrees
+    description: "Shield pitch angle"
+
+  roll:
+    min: -5
+    max: 5
+    unit: degrees
+    description: "Shield roll angle"
+
+  yaw:
+    min: -10
+    max: 10
+    unit: degrees
+    description: "Shield yaw angle"
+
+  # Deviations (mm)
+  horizontal_deviation:
+    min: -100
+    max: 100
+    unit: mm
+    description: "Horizontal deviation from design alignment"
+
+  vertical_deviation:
+    min: -100
+    max: 100
+    unit: mm
+    description: "Vertical deviation from design alignment"
+
+  # Monitoring Data
+  settlement:
+    min: -100  # heave
+    max: 100   # settlement
+    unit: mm
+    description: "Surface settlement"
+
+  displacement:
+    min: -50
+    max: 50
+    unit: mm
+    description: "Deep displacement"
+
+  groundwater_level:
+    min: -50
+    max: 50
+    unit: m
+    description: "Groundwater level change"
+
+# Interpolation settings
+interpolation:
+  max_gap_seconds: 5  # Maximum gap duration to fill with interpolation
+  method: "linear"    # linear | forward_fill | spline

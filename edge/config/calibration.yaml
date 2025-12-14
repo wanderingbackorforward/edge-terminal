@@ -1,0 +1,84 @@
+# Sensor Calibration Configuration
+# Applied by CalibrationApplicator to correct sensor readings
+
+calibrations:
+  # Linear calibration: calibrated = (raw + offset) * scale
+  chamber_pressure:
+    type: linear
+    offset: -0.05      # bar (systematic bias correction)
+    scale: 1.02        # Scale factor
+    enabled: true
+    last_calibrated: 1700000000  # Unix timestamp
+    valid_from: 1700000000
+    # valid_until: null  # null = no expiration
+
+  thrust_cylinder_1:
+    type: linear
+    offset: -15.0      # kN
+    scale: 1.01
+    enabled: true
+
+  thrust_cylinder_2:
+    type: linear
+    offset: -12.0      # kN
+    scale: 1.01
+    enabled: true
+
+  # Polynomial calibration: calibrated = c0 + c1*x + c2*x^2 + ...
+  slurry_temperature:
+    type: polynomial
+    coefficients: [0.5, 0.98, 0.0002]  # [c0, c1, c2]
+    enabled: true
+    description: "Quadratic correction for temperature sensor drift"
+
+  penetration_rate:
+    type: polynomial
+    coefficients: [0.0, 1.05, -0.001]  # Small quadratic correction
+    enabled: true
+
+  # Lookup table calibration (with linear interpolation)
+  torque_sensor:
+    type: lookup
+    lookup_table:
+      - {raw: 0, calibrated: 0}
+      - {raw: 100, calibrated: 102}
+      - {raw: 500, calibrated: 515}
+      - {raw: 1000, calibrated: 1035}
+      - {raw: 1500, calibrated: 1560}
+    enabled: true
+    description: "Non-linear torque sensor calibration curve"
+
+  # Disabled calibration (will pass through raw value)
+  cutterhead_speed:
+    type: linear
+    offset: 0.0
+    scale: 1.0
+    enabled: false
+    description: "Calibration disabled pending maintenance"
+
+  # Settlement sensor with time-based validity
+  settlement_sensor_A01:
+    type: linear
+    offset: -0.5       # mm
+    scale: 1.0
+    enabled: true
+    valid_from: 1700000000    # Start of validity
+    valid_until: 1732000000   # Expiration (recalibration needed)
+    description: "Settlement sensor calibrated on 2023-11-14"
+
+# Calibration metadata
+metadata:
+  last_updated: "2025-11-19"
+  calibration_lab: "Shield TBM Engineering Lab"
+  standards_reference: "ISO 17123-1"
+  notes: |
+    Calibration offsets determined from:
+    - Factory calibration certificates
+    - Field calibration against reference instruments
+    - Historical drift analysis
+
+    Recalibration schedule:
+    - Pressure sensors: Every 6 months
+    - Load cells (thrust): Every 3 months
+    - Temperature sensors: Annually
+    - Settlement sensors: After each project phase
