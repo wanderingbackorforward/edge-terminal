@@ -268,10 +268,32 @@ export const healthApi = {
   },
 };
 
+// ============================================================================
+// Manual Logs API
+// ============================================================================
+
+export const manualLogApi = {
+  /**
+   * Submit manual logs batch
+   */
+  async submitManualLogs(data: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await edgeApi.post<{ success: boolean; message: string }>(
+        '/manual-logs',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error as AxiosError);
+    }
+  },
+};
+
 // Export default API object
 export default {
   ring: ringApi,
   prediction: predictionApi,
   warning: warningApi,
   health: healthApi,
+  manualLog: manualLogApi,
 };

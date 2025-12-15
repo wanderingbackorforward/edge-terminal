@@ -1,0 +1,326 @@
+version: '3.8'
+
+services:
+  # TimescaleDB (PostgreSQL with time-series extension)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: shield-timescaledb
+    restart: unless-stopped
+
+    ports:
+      - "55432:5432"
+
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-shield_cloud}
+      - POSTGRES_USER=${POSTGRES_USER:-shield}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_this_password}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./database/migrations/cloud:/docker-entrypoint-initdb.d
+
+    networks:
+      - shield_cloud_network
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shield} -d ${POSTGRES_DB:-shield_cloud}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # MinIO Object Storage (for model files and large data)
+  minio:
+    image: minio/minio:latest
+    container_name: shield-minio
+    restart: unless-stopped
+
+    ports:
+      - "9000:9000" # API port
+      - "9001:9001" # Console port
+
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-change_this_password}
+
+    command: server /data --console-address ":9001"
+
+    volumes:
+      - minio_data:/data
+
+    networks:
+      - shield_cloud_network
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  # Redis Cache (for feature caching and sync queues)
+  redis:
+    image: redis:7-alpine
+    container_name: shield-redis
+    restart: unless-stopped
+
+    ports:
+      - "6380:6379"
+
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-change_this_password}
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - shield_cloud_network
+
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  # Cloud API Service (FastAPI)
+  cloud-api:
+    build:
+      context: .
+      dockerfile: cloud/Dockerfile
+    container_name: shield-cloud-api
+    restart: unless-stopped
+
+    ports:
+      - "8001:8001"
+
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-change_this_password}@timescaledb:5432/${POSTGRES_DB:-shield_cloud}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-change_this_password}@redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-change_this_password}
+      - API_SECRET_KEY=${API_SECRET_KEY:-generate_a_secure_key_here}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    volumes:
+      - ./cloud:/app/cloud
+
+    networks:
+      - shield_cloud_network
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # Airflow PostgreSQL Database (separate from main TimescaleDB)
+  airflow-postgres:
+    image: postgres:15-alpine
+    container_name: shield-airflow-postgres
+    restart: unless-stopped
+
+    environment:
+      - POSTGRES_DB=airflow
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=${AIRFLOW_DB_PASSWORD:-airflow_password}
+
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - shield_cloud_network
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U airflow" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Airflow Webserver
+  airflow-webserver:
+    image: apache/airflow:2.7.3-python3.11
+    container_name: shield-airflow-webserver
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow_password}@airflow-postgres:5432/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-generate_fernet_key_here}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY:-generate_secret_key_here}
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+
+    volumes:
+      - ./cloud/etl/dags:/opt/airflow/dags
+      - ./cloud/etl/tasks:/opt/airflow/tasks
+      - airflow_logs:/opt/airflow/logs
+
+    networks:
+      - shield_cloud_network
+
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
+    command: webserver
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Airflow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.7.3-python3.11
+    container_name: shield-airflow-scheduler
+    restart: unless-stopped
+
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow_password}@airflow-postgres:5432/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-generate_fernet_key_here}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+
+    volumes:
+      - ./cloud/etl/dags:/opt/airflow/dags
+      - ./cloud/etl/tasks:/opt/airflow/tasks
+      - airflow_logs:/opt/airflow/logs
+
+    networks:
+      - shield_cloud_network
+
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_started
+
+    command: scheduler
+
+  # PgAdmin (Optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: shield-pgadmin
+    restart: unless-stopped
+    profiles:
+      - admin
+
+    ports:
+      - "5050:80"
+
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@shield.local}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin_password}
+      - PGADMIN_CONFIG_SERVER_MODE=True
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    networks:
+      - shield_cloud_network
+
+    depends_on:
+      - timescaledb
+
+  # MLflow Tracking Server (for model training and registry)
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.9.2
+    container_name: shield-mlflow
+    restart: unless-stopped
+
+    ports:
+      - "5000:5000"
+
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-change_this_password}@timescaledb:5432/${POSTGRES_DB:-shield_cloud}
+      - MLFLOW_ARTIFACTS_DESTINATION=s3://mlflow
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-change_this_password}
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+
+    command: >
+      mlflow server --backend-store-uri postgresql://${POSTGRES_USER:-shield}:${POSTGRES_PASSWORD:-change_this_password}@timescaledb:5432/${POSTGRES_DB:-shield_cloud} --default-artifact-root s3://mlflow/artifacts --host 0.0.0.0 --port 5000
+
+    networks:
+      - shield_cloud_network
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+networks:
+  shield_cloud_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  timescaledb_data:
+    driver: local
+  minio_data:
+    driver: local
+  redis_data:
+    driver: local
+  airflow_postgres_data:
+    driver: local
+  airflow_logs:
+    driver: local
+  pgadmin_data:
+    driver: local
+  mlflow_data:
+    driver: local

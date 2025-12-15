@@ -1,126 +1,107 @@
-/**
- * 数据分析页：轨迹分析 / 沉降趋势 / 参数相关性（示例占位）
- */
-import React, { useMemo } from 'react';
-import { Row, Col, Card, Space, Button, Empty, Typography } from 'antd';
-import { ReloadOutlined, LineChartOutlined, DeploymentUnitOutlined } from '@ant-design/icons';
-import { TrajectoryPlot, ParameterTimeSeries } from '../components/charts';
-import type { TrajectoryData, MultiSeriesData } from '../types/charts';
-import { useRealTimeData } from '../hooks/useRealTimeData';
-
-const { Title, Paragraph, Text } = Typography;
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ringApi } from '../services/api';
+import { TrajectoryChart, TrendChart } from '../components/charts';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Calendar, Download } from 'lucide-react';
 
 const Analytics: React.FC = () => {
-  const { recentRings, refresh, loading } = useRealTimeData({
-    enabled: true,
-    ringHistorySize: 120,
-  });
+    const [range, setRange] = useState({ start: 1, end: 100 });
 
-  const rings = recentRings || [];
+    const { data: rings, isLoading } = useQuery({
+        queryKey: ['rings', 'range', range.start, range.end],
+        queryFn: () => ringApi.getRingRange(range.start, range.end),
+        staleTime: 60000, // 1分钟缓存
+    });
 
-  const trajectoryData: TrajectoryData | null = useMemo(() => {
-    if (!rings.length) return null;
-    return {
-      actual: rings.map((r) => ({
-        ring_number: r.ring_number,
-        horizontal: r.horizontal_deviation || 0,
-        vertical: r.vertical_deviation || 0,
-        timestamp: r.start_time || Date.now(),
-      })),
-      design: rings.map((r) => ({
-        ring_number: r.ring_number,
-        horizontal: 0,
-        vertical: 0,
-        timestamp: r.start_time || Date.now(),
-      })),
-      tolerance_upper: rings.map((r) => ({
-        ring_number: r.ring_number,
-        horizontal: 30,
-        vertical: 30,
-        timestamp: r.start_time || Date.now(),
-      })),
-      tolerance_lower: rings.map((r) => ({
-        ring_number: r.ring_number,
-        horizontal: -30,
-        vertical: -30,
-        timestamp: r.start_time || Date.now(),
-      })),
-    };
-  }, [rings]);
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                        数据分析
+                    </h1>
+                    <p className="text-text-secondary">
+                        历史趋势与轨迹分析
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                    <Button variant="outline" size="sm">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        第{range.start}环 - 第{range.end}环
+                    </Button>
+                    <Button variant="outline" size="sm">
+                        <Download className="w-4 h-4 mr-2" />
+                        导出报告
+                    </Button>
+                </div>
+            </div>
 
-  const settlementSeries: MultiSeriesData | null = useMemo(() => {
-    if (!rings.length) return null;
-    return {
-      xAxisType: 'ring',
-      series: [
-        {
-          label: '沉降(mm)',
-          unit: 'mm',
-          data: rings.map((r) => ({
-            timestamp: r.ring_number,
-            value: r.settlement_value ?? 0,
-            ring_number: r.ring_number,
-          })),
-        },
-      ],
-    };
-  }, [rings]);
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 轨迹分析 */}
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle>隧道轨迹偏差</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <TrajectoryChart data={rings || []} isLoading={isLoading} />
+                    </CardContent>
+                </Card>
 
-  const correlationContent = (
-    <Space direction="vertical">
-      <Paragraph>当前为演示数据，尚未接入相关性分析模型。</Paragraph>
-      <Paragraph>可从沉降、推力、注浆压力等参数中计算皮尔逊/斯皮尔曼相关系数，后续版本接入。</Paragraph>
-      <Button icon={<ReloadOutlined />} onClick={() => refresh?.()}>
-        重新拉取数据
-      </Button>
-    </Space>
-  );
+                {/* 推力趋势 */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>推力趋势</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <TrendChart
+                            data={rings || []}
+                            parameter="mean_thrust"
+                            label="推力"
+                            unit="kN"
+                            color="#58a6ff"
+                            isLoading={isLoading}
+                        />
+                    </CardContent>
+                </Card>
 
-  return (
-    <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <Space align="center">
-        <LineChartOutlined style={{ color: '#1890ff', fontSize: 20 }} />
-        <Title level={4} style={{ margin: 0 }}>
-          数据分析
-        </Title>
-        <Button icon={<ReloadOutlined />} size="small" onClick={() => refresh?.()} loading={loading.rings}>
-          刷新
-        </Button>
-      </Space>
+                {/* 扭矩趋势 */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>刀盘扭矩趋势</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <TrendChart
+                            data={rings || []}
+                            parameter="mean_torque"
+                            label="扭矩"
+                            unit="kNm"
+                            color="#d29922"
+                            isLoading={isLoading}
+                        />
+                    </CardContent>
+                </Card>
 
-      <Row gutter={[16, 16]}>
-        <Col span={24} xl={12}>
-          <Card title="轨迹分析">
-            {trajectoryData ? (
-              <TrajectoryPlot data={trajectoryData} height={320} showDataZoom />
-            ) : (
-              <Empty description="暂无环数据，可稍后刷新" />
-            )}
-          </Card>
-        </Col>
-        <Col span={24} xl={12}>
-          <Card title="沉降趋势">
-            {settlementSeries ? (
-              <ParameterTimeSeries
-                data={settlementSeries}
-                title="沉降随环号"
-                height={320}
-                showLegend={false}
-                yAxisName="沉降 (mm)"
-                yAxisUnit="mm"
-              />
-            ) : (
-              <Empty description="暂无沉降数据" />
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      <Card title="参数相关性" extra={<DeploymentUnitOutlined />}>
-        {correlationContent}
-      </Card>
-    </Space>
-  );
+                {/* 沉降趋势 */}
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle>地表沉降监测</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <TrendChart
+                            data={rings || []}
+                            parameter="settlement_value"
+                            label="沉降"
+                            unit="mm"
+                            color="#f85149"
+                            isLoading={isLoading}
+                        />
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+    );
 };
 
 export default Analytics;

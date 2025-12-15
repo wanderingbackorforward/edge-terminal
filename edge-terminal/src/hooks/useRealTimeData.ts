@@ -1,335 +1,119 @@
-/**
- * Real-Time Data Subscription Hook
- * Manages MQTT subscriptions and API polling for dashboard data
- */
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { mqttService, MQTT_TOPICS } from '../services/mqtt';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import mqtt from 'mqtt';
 import { ringApi, warningApi, predictionApi } from '../services/api';
 import type { RingSummary, WarningEvent, PredictionResult } from '../types/api';
 
-// ============================================================================
-// Types
-// ============================================================================
+const MQTT_BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL || 'ws://localhost:9001';
 
-export interface RealTimeDataState {
-  // Latest data
-  latestRing: RingSummary | null;
-  activeWarnings: WarningEvent[];
-  latestPrediction: PredictionResult | null;
-
-  // Historical data for charts
-  recentRings: RingSummary[];
-  warningStats: {
-    total: number;
-    active: number;
-    byLevel: Record<string, number>;
-  };
-
-  // Connection status
-  connected: boolean;
-  lastUpdate: number;
-
-  // Loading states
-  loading: {
-    rings: boolean;
-    warnings: boolean;
-    predictions: boolean;
-  };
-
-  // Errors
-  error: string | null;
+interface RealTimeDataState {
+  isConnected: boolean;
+  lastUpdated: number;
 }
 
-export interface UseRealTimeDataOptions {
-  enabled?: boolean;
-  pollingInterval?: number;
-  ringHistorySize?: number;
-  onNewWarning?: (warning: WarningEvent) => void;
-  onNewRing?: (ring: RingSummary) => void;
-  onNewPrediction?: (prediction: PredictionResult) => void;
-}
+export function useRealTimeData() {
+  const queryClient = useQueryClient();
+  const [connectionState, setConnectionState] = useState<RealTimeDataState>({
+    isConnected: false,
+    lastUpdated: Date.now(),
+  });
+  const clientRef = useRef<mqtt.MqttClient | null>(null);
 
-// ============================================================================
-// Default Values
-// ============================================================================
+  // Initial Data Queries
+  const ringsQuery = useQuery({
+    queryKey: ['rings', 'latest'],
+    queryFn: ringApi.getLatestRing,
+    refetchInterval: 5000, // Fallback polling
+    staleTime: 10000,
+  });
 
-const DEFAULT_OPTIONS: Required<UseRealTimeDataOptions> = {
-  enabled: true,
-  pollingInterval: 30000, // 30 seconds
-  ringHistorySize: 50,
-  onNewWarning: () => {},
-  onNewRing: () => {},
-  onNewPrediction: () => {},
-};
+  const warningsQuery = useQuery({
+    queryKey: ['warnings', 'active'],
+    queryFn: warningApi.getActiveWarnings,
+    refetchInterval: 10000,
+  });
 
-const INITIAL_STATE: RealTimeDataState = {
-  latestRing: null,
-  activeWarnings: [],
-  latestPrediction: null,
-  recentRings: [],
-  warningStats: {
-    total: 0,
-    active: 0,
-    byLevel: {},
-  },
-  connected: false,
-  lastUpdate: 0,
-  loading: {
-    rings: false,
-    warnings: false,
-    predictions: false,
-  },
-  error: null,
-};
+  const predictionQuery = useQuery({
+    queryKey: ['predictions', 'latest'],
+    queryFn: predictionApi.getLatestPrediction,
+    refetchInterval: 10000,
+  });
 
-// ============================================================================
-// Hook Implementation
-// ============================================================================
+  // MQTT Connection Logic
+  useEffect(() => {
+    // Avoid double connection in React Strict Mode
+    if (clientRef.current) return;
 
-export function useRealTimeData(options: UseRealTimeDataOptions = {}) {
-  const config = useMemo(() => ({ ...DEFAULT_OPTIONS, ...options }), []);
-  const ringHistorySize = config.ringHistorySize;
-  const [state, setState] = useState<RealTimeDataState>(INITIAL_STATE);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  const mountedRef = useRef(true);
-
-  // Helper to update state safely
-  const updateState = useCallback((updates: Partial<RealTimeDataState>) => {
-    if (mountedRef.current) {
-      setState((prev) => ({ ...prev, ...updates }));
-    }
-  }, []);
-
-  // Fetch initial data via REST API
-  const fetchInitialData = useCallback(async () => {
-    updateState({
-      loading: { rings: true, warnings: true, predictions: true },
-      error: null,
+    console.log('Connecting to MQTT broker:', MQTT_BROKER_URL);
+    const client = mqtt.connect(MQTT_BROKER_URL, {
+      clean: true,
+      connectTimeout: 4000,
+      reconnectPeriod: 1000,
     });
 
-    try {
-      // Fetch all data in parallel
-      const [latestRing, activeWarnings, latestPrediction, ringHistory] = await Promise.all([
-        ringApi.getLatestRing().catch(() => null),
-        warningApi.getActiveWarnings().catch(() => []),
-        predictionApi.getLatestPrediction().catch(() => null),
-        ringApi.getRings({ page_size: ringHistorySize }).catch(() => ({ rings: [] })),
-      ]);
-
-      // Calculate warning stats
-      const warningStats = {
-        total: activeWarnings.length,
-        active: activeWarnings.filter((w) => w.status === 'active').length,
-        byLevel: activeWarnings.reduce((acc, w) => {
-          acc[w.warning_level] = (acc[w.warning_level] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-      };
-
-      updateState({
-        latestRing,
-        activeWarnings,
-        latestPrediction,
-        recentRings: ringHistory.rings,
-        warningStats,
-        lastUpdate: Date.now(),
-        loading: { rings: false, warnings: false, predictions: false },
-      });
-    } catch (error) {
-      updateState({
-        error: error instanceof Error ? error.message : 'Failed to fetch data',
-        loading: { rings: false, warnings: false, predictions: false },
-      });
-    }
-  }, [ringHistorySize, updateState]);
-
-  // Refresh warnings
-  const refreshWarnings = useCallback(async () => {
-    try {
-      const activeWarnings = await warningApi.getActiveWarnings();
-      const warningStats = {
-        total: activeWarnings.length,
-        active: activeWarnings.filter((w) => w.status === 'active').length,
-        byLevel: activeWarnings.reduce((acc, w) => {
-          acc[w.warning_level] = (acc[w.warning_level] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-      };
-      updateState({ activeWarnings, warningStats });
-    } catch (error) {
-      console.error('Failed to refresh warnings:', error);
-    }
-  }, [updateState]);
-
-  // Handle MQTT connection
-  const connectMqtt = useCallback(async () => {
-    try {
-      await mqttService.connect();
-
-      // Set up handlers
-      mqttService.setHandlers({
-        onConnect: () => {
-          updateState({ connected: true });
-        },
-        onDisconnect: () => {
-          updateState({ connected: false });
-        },
-        onWarning: (warning) => {
-          setState((prev) => {
-            // Add to list if not already present
-            const exists = prev.activeWarnings.some((w) => w.warning_id === warning.warning_id);
-            if (!exists) {
-              config.onNewWarning(warning);
-              return {
-                ...prev,
-                activeWarnings: [warning, ...prev.activeWarnings],
-                warningStats: {
-                  ...prev.warningStats,
-                  total: prev.warningStats.total + 1,
-                  active: prev.warningStats.active + 1,
-                  byLevel: {
-                    ...prev.warningStats.byLevel,
-                    [warning.warning_level]: (prev.warningStats.byLevel[warning.warning_level] || 0) + 1,
-                  },
-                },
-                lastUpdate: Date.now(),
-              };
-            }
-            return prev;
-          });
-        },
-        onWarningStatus: (warning) => {
-          setState((prev) => ({
-            ...prev,
-            activeWarnings: prev.activeWarnings.map((w) =>
-              w.warning_id === warning.warning_id ? warning : w
-            ),
-            lastUpdate: Date.now(),
-          }));
-        },
-        onRing: (ring) => {
-          config.onNewRing(ring);
-          setState((prev) => ({
-            ...prev,
-            latestRing: ring,
-            recentRings: [ring, ...prev.recentRings.slice(0, config.ringHistorySize - 1)],
-            lastUpdate: Date.now(),
-          }));
-        },
-        onPrediction: (prediction) => {
-          config.onNewPrediction(prediction);
-          updateState({
-            latestPrediction: prediction,
-            lastUpdate: Date.now(),
-          });
-        },
-        onError: (error) => {
-          console.error('MQTT error:', error);
-          updateState({ error: error.message });
-        },
-      });
+    client.on('connect', () => {
+      console.log('MQTT Connected');
+      setConnectionState(prev => ({ ...prev, isConnected: true }));
 
       // Subscribe to topics
-      mqttService.subscribeWarnings();
-      mqttService.subscribeRings();
-      mqttService.subscribePredictions();
-      mqttService.subscribeSystemStatus();
-    } catch (error) {
-      console.error('Failed to connect MQTT:', error);
-      updateState({ connected: false });
-    }
-  }, [config, updateState]);
+      client.subscribe('tunnel/rings/latest');
+      client.subscribe('tunnel/warnings/new');
+      client.subscribe('tunnel/predictions/new');
+    });
 
-  // Set up polling fallback
-  const startPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-    }
-
-    pollingRef.current = setInterval(async () => {
-      if (!mountedRef.current) return;
-
+    client.on('message', (topic, message) => {
       try {
-        const [latestRing, activeWarnings] = await Promise.all([
-          ringApi.getLatestRing().catch(() => null),
-          warningApi.getActiveWarnings().catch(() => []),
-        ]);
+        const payload = JSON.parse(message.toString());
+        const now = Date.now();
+        setConnectionState(prev => ({ ...prev, lastUpdated: now }));
 
-        if (latestRing) {
-          setState((prev) => {
-            // Check if this is a new ring
-            if (prev.latestRing?.ring_number !== latestRing.ring_number) {
-              config.onNewRing(latestRing);
-              return {
-                ...prev,
-                latestRing,
-                recentRings: [latestRing, ...prev.recentRings.slice(0, ringHistorySize - 1)],
-                lastUpdate: Date.now(),
-              };
-            }
-            return prev;
-          });
+        switch (topic) {
+          case 'tunnel/rings/latest':
+            queryClient.setQueryData(['rings', 'latest'], payload);
+            break;
+          case 'tunnel/warnings/new':
+            // Invalidate to refetch full list or append
+            queryClient.invalidateQueries({ queryKey: ['warnings', 'active'] });
+            break;
+          case 'tunnel/predictions/new':
+            queryClient.setQueryData(['predictions', 'latest'], payload);
+            break;
         }
-
-        // Check for new warnings
-        activeWarnings.forEach((warning) => {
-          setState((prev) => {
-            const exists = prev.activeWarnings.some((w) => w.warning_id === warning.warning_id);
-            if (!exists) {
-              config.onNewWarning(warning);
-            }
-            return prev;
-          });
-        });
-
-        updateState({
-          activeWarnings,
-          warningStats: {
-            total: activeWarnings.length,
-            active: activeWarnings.filter((w) => w.status === 'active').length,
-            byLevel: activeWarnings.reduce((acc, w) => {
-              acc[w.warning_level] = (acc[w.warning_level] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>),
-          },
-          lastUpdate: Date.now(),
-        });
-      } catch (error) {
-        console.error('Polling error:', error);
+      } catch (err) {
+        console.error('Failed to parse MQTT message:', err);
       }
-    }, config.pollingInterval);
-  }, [ringHistorySize, updateState]);
+    });
 
-  // Initialize
-  useEffect(() => {
-    mountedRef.current = true;
+    client.on('error', (err) => {
+      console.error('MQTT Connection Error:', err);
+      setConnectionState(prev => ({ ...prev, isConnected: false }));
+    });
 
-    if (config.enabled) {
-      fetchInitialData();
-      // MQTT 连接在开发环境可选，避免无 broker 时反复重连
-      // connectMqtt();
-      startPolling();
-    }
+    client.on('close', () => {
+      setConnectionState(prev => ({ ...prev, isConnected: false }));
+    });
 
+    clientRef.current = client;
+
+    // Cleanup
     return () => {
-      mountedRef.current = false;
-      mqttService.disconnect();
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
+      if (clientRef.current) {
+        console.log('Closing MQTT connection');
+        clientRef.current.end();
+        clientRef.current = null;
       }
     };
-  }, [config.enabled, fetchInitialData, connectMqtt, startPolling]);
-
-  // Manual refresh
-  const refresh = useCallback(() => {
-    fetchInitialData();
-  }, [fetchInitialData]);
+  }, [queryClient]);
 
   return {
-    ...state,
-    refresh,
-    refreshWarnings,
+    latestRing: ringsQuery.data,
+    activeWarnings: warningsQuery.data || [],
+    latestPrediction: predictionQuery.data,
+    isLoading: ringsQuery.isLoading || warningsQuery.isLoading,
+    isError: ringsQuery.isError || warningsQuery.isError,
+
+    // Connection Status
+    isConnected: connectionState.isConnected,
+    lastUpdate: connectionState.lastUpdated,
   };
 }
-
-export default useRealTimeData;

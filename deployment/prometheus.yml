@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'shield-tunneling-edge'
+
+# Alerting configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Edge platform metrics
+  - job_name: 'edge-platform'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['edge:8000']
+    # Optional: basic auth
+    # basic_auth:
+    #   username: 'prometheus'
+    #   password: 'your-password'
+
+  # Docker container metrics (if using cAdvisor)
+  # - job_name: 'docker'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+
+  # Node exporter for system metrics (optional)
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
